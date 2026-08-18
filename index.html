@@ -1,0 +1,781 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>لوحة إشارات التداول الحية</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans+Arabic:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg-deep:#0A0E13;
+    --panel:#121821;
+    --panel-alt:#1A2129;
+    --border:#232C36;
+    --text-primary:#E8EDF2;
+    --text-muted:#6E7C8C;
+    --buy:#2FBF8F;
+    --sell:#E4573D;
+    --wait:#D9A441;
+    --buy-dim: rgba(47,191,143,0.12);
+    --sell-dim: rgba(228,87,61,0.12);
+    --wait-dim: rgba(217,164,65,0.12);
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--bg-deep);
+    color:var(--text-primary);
+    font-family:'IBM Plex Sans Arabic', sans-serif;
+    min-height:100vh;
+  }
+  .mono{font-family:'IBM Plex Mono', monospace; font-variant-numeric: tabular-nums;}
+  .display{font-family:'Space Grotesk', sans-serif;}
+
+  header{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:18px 28px; border-bottom:1px solid var(--border);
+    flex-wrap:wrap; gap:12px;
+  }
+  header h1{
+    font-family:'Space Grotesk', sans-serif;
+    font-size:19px; font-weight:600; margin:0;
+    display:flex; align-items:center; gap:10px;
+  }
+  header h1 .dot{width:8px;height:8px;border-radius:50%;background:var(--wait);}
+  .status-pill{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:12px; padding:5px 12px; border-radius:20px;
+    border:1px solid var(--border); color:var(--text-muted);
+    display:flex; align-items:center; gap:6px;
+  }
+  .status-pill .led{width:7px;height:7px;border-radius:50%;background:var(--text-muted);}
+  .status-pill.on .led{background:var(--buy); box-shadow:0 0 8px var(--buy);}
+  .status-pill.on{color:var(--buy);}
+  .status-pill.paused .led{background:var(--wait); box-shadow:0 0 8px var(--wait);}
+  .status-pill.paused{color:var(--wait);}
+
+  /* ===== شريط النبض (العنصر المميز) ===== */
+  .pulse-wrap{
+    padding:10px 28px; border-bottom:1px solid var(--border);
+    background:linear-gradient(180deg, rgba(255,255,255,0.015), transparent);
+  }
+  .pulse-label{
+    font-family:'IBM Plex Mono', monospace; font-size:11px; color:var(--text-muted);
+    letter-spacing:0.08em; margin-bottom:4px; display:flex; justify-content:space-between;
+  }
+  #pulseSvg{width:100%; height:64px; display:block;}
+  #pulseLine{fill:none; stroke-width:2; transition:stroke 0.4s ease;}
+  #pulseGlowDot{opacity:0;}
+
+  main{
+    display:grid;
+    grid-template-columns: 280px 1fr 300px;
+    gap:1px;
+    background:var(--border);
+    min-height:0;
+  }
+  @media (max-width:980px){
+    main{grid-template-columns:1fr;}
+  }
+  .panel{background:var(--panel); padding:22px;}
+  .panel h2{
+    font-family:'Space Grotesk', sans-serif; font-size:13px; font-weight:600;
+    color:var(--text-muted); text-transform:uppercase; letter-spacing:0.08em;
+    margin:0 0 16px 0;
+  }
+
+  .field{margin-bottom:14px;}
+  .field label{display:block; font-size:12px; color:var(--text-muted); margin-bottom:6px;}
+  .field input, .field select{
+    width:100%; background:var(--panel-alt); border:1px solid var(--border);
+    color:var(--text-primary); padding:9px 10px; border-radius:6px;
+    font-family:'IBM Plex Mono', monospace; font-size:13px;
+  }
+  .field input:focus, .field select:focus{outline:none; border-color:var(--buy);}
+
+  .checkbox-row{display:flex; align-items:center; gap:8px; margin-bottom:14px; font-size:13px; color:var(--text-muted);}
+  .checkbox-row input{width:auto;}
+
+  button{
+    width:100%; padding:11px; border-radius:6px; border:none;
+    font-family:'Space Grotesk', sans-serif; font-weight:600; font-size:14px;
+    cursor:pointer; transition:opacity 0.15s ease;
+  }
+  button:hover{opacity:0.85;}
+  button:disabled{opacity:0.4; cursor:not-allowed;}
+  #startBtn{background:var(--buy); color:#04140F;}
+  #stopBtn{background:var(--panel-alt); color:var(--sell); border:1px solid var(--sell); display:none;}
+
+  .hint{font-size:11px; color:var(--text-muted); margin-top:10px; line-height:1.6;}
+  .hint a{color:var(--wait);}
+
+  /* ===== بطاقة الإشارة المركزية ===== */
+  .signal-card{
+    height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    border-radius:10px; text-align:center; padding:30px 20px;
+    background:var(--panel-alt); border:1px solid var(--border);
+    transition:all 0.4s ease;
+  }
+  .signal-card.state-call{background:var(--buy-dim); border-color:var(--buy);}
+  .signal-card.state-put{background:var(--sell-dim); border-color:var(--sell);}
+  .signal-card.state-news{background:var(--wait-dim); border-color:var(--wait);}
+  .signal-eyebrow{font-family:'IBM Plex Mono', monospace; font-size:12px; color:var(--text-muted); letter-spacing:0.1em; margin-bottom:10px;}
+  .signal-title{font-family:'Space Grotesk', sans-serif; font-size:52px; font-weight:700; line-height:1; margin:0;}
+  .state-call .signal-title{color:var(--buy);}
+  .state-put .signal-title{color:var(--sell);}
+  .state-news .signal-title{color:var(--wait); font-size:28px;}
+  .state-idle .signal-title{color:var(--text-muted); font-size:28px;}
+  .signal-meta{margin-top:16px; font-family:'IBM Plex Mono', monospace; font-size:13px; color:var(--text-muted); max-width:340px;}
+  .signal-price{font-size:28px; margin-top:14px; font-family:'IBM Plex Mono', monospace; color:var(--text-primary);}
+
+  /* ===== المؤشرات ===== */
+  .indicator-row{
+    display:flex; justify-content:space-between; align-items:baseline;
+    padding:10px 0; border-bottom:1px solid var(--border);
+  }
+  .indicator-row:last-child{border-bottom:none;}
+  .indicator-row .label{font-size:12px; color:var(--text-muted);}
+  .indicator-row .value{font-family:'IBM Plex Mono', monospace; font-size:15px;}
+  .value.up{color:var(--buy);} .value.down{color:var(--sell);}
+
+  /* ===== سجل الأحداث ===== */
+  .log-panel{grid-column:1 / -1; background:var(--panel); padding:0; border-top:1px solid var(--border);}
+  .log-header{
+    padding:14px 28px; border-bottom:1px solid var(--border);
+    font-family:'Space Grotesk', sans-serif; font-size:13px; font-weight:600;
+    color:var(--text-muted); text-transform:uppercase; letter-spacing:0.08em;
+  }
+  #log{
+    max-height:220px; overflow-y:auto; padding:14px 28px;
+    font-family:'IBM Plex Mono', monospace; font-size:12.5px; line-height:2;
+  }
+  #log .entry{display:flex; gap:10px;}
+  #log .ts{color:var(--text-muted); flex-shrink:0;}
+  #log .msg.call{color:var(--buy);}
+  #log .msg.put{color:var(--sell);}
+  #log .msg.news{color:var(--wait);}
+  #log .msg.info{color:var(--text-muted);}
+  #log .msg.error{color:var(--sell);}
+</style>
+</head>
+<body>
+
+<header>
+  <h1><span class="dot" id="headerDot"></span> لوحة إشارات التداول الحية</h1>
+  <div class="status-pill" id="statusPill"><span class="led"></span><span id="statusText">متوقف</span></div>
+</header>
+
+<div class="pulse-wrap">
+  <div class="pulse-label">
+    <span id="pulseSymbolLabel">-- / --</span>
+    <span id="pulseLastPrice" class="mono">--</span>
+  </div>
+  <svg id="pulseSvg" viewBox="0 0 1000 64" preserveAspectRatio="none">
+    <polyline id="pulseLine" points="" stroke="#6E7C8C"/>
+    <circle id="pulseGlowDot" r="4" fill="#2FBF8F"/>
+  </svg>
+</div>
+
+<main>
+  <section class="panel">
+    <h2>الإعدادات</h2>
+    <div class="field">
+      <label>الزوج (Symbol)</label>
+      <select id="symbol">
+        <optgroup label="أزواج رئيسية (Majors)">
+          <option value="EUR/USD" selected>EUR/USD</option>
+          <option value="GBP/USD">GBP/USD</option>
+          <option value="USD/JPY">USD/JPY</option>
+          <option value="USD/CHF">USD/CHF</option>
+          <option value="USD/CAD">USD/CAD</option>
+          <option value="AUD/USD">AUD/USD</option>
+          <option value="NZD/USD">NZD/USD</option>
+        </optgroup>
+        <optgroup label="أزواج فرعية (Minors / Crosses)">
+          <option value="EUR/GBP">EUR/GBP</option>
+          <option value="EUR/JPY">EUR/JPY</option>
+          <option value="EUR/CHF">EUR/CHF</option>
+          <option value="EUR/AUD">EUR/AUD</option>
+          <option value="EUR/CAD">EUR/CAD</option>
+          <option value="EUR/NZD">EUR/NZD</option>
+          <option value="GBP/JPY">GBP/JPY</option>
+          <option value="GBP/CHF">GBP/CHF</option>
+          <option value="GBP/AUD">GBP/AUD</option>
+          <option value="GBP/CAD">GBP/CAD</option>
+          <option value="GBP/NZD">GBP/NZD</option>
+          <option value="AUD/JPY">AUD/JPY</option>
+          <option value="AUD/CHF">AUD/CHF</option>
+          <option value="AUD/CAD">AUD/CAD</option>
+          <option value="AUD/NZD">AUD/NZD</option>
+          <option value="CAD/JPY">CAD/JPY</option>
+          <option value="CAD/CHF">CAD/CHF</option>
+          <option value="CHF/JPY">CHF/JPY</option>
+          <option value="NZD/JPY">NZD/JPY</option>
+          <option value="NZD/CHF">NZD/CHF</option>
+          <option value="NZD/CAD">NZD/CAD</option>
+        </optgroup>
+        <optgroup label="مؤشرات اصطناعية Deriv (24/7)">
+          <option value="R_10">Volatility 10 Index</option>
+          <option value="R_25">Volatility 25 Index</option>
+          <option value="R_50">Volatility 50 Index</option>
+          <option value="R_75">Volatility 75 Index</option>
+          <option value="R_100">Volatility 100 Index</option>
+        </optgroup>
+        <optgroup label="مخصص (لأزواج غريبة مثل USD/TRY استخدم رمز Deriv يدويًا)">
+          <option value="__custom__">أدخل رمزًا يدويًا...</option>
+        </optgroup>
+      </select>
+    </div>
+    <div class="field" id="customSymbolField" style="display:none;">
+      <label>رمز Deriv المخصص (مثل frxUSDTRY أو R_100)</label>
+      <input type="text" id="customSymbol" placeholder="مثال: frxUSDTRY">
+      <div class="hint" style="margin-top:6px;">
+        ملاحظة: Deriv لا يدعم كل الأزواج الغريبة (Exotics) مباشرة زي Twelve Data. جرّب الرمز، ولو رفضه Deriv بيطلع لك خطأ واضح بالسجل.
+      </div>
+    </div>
+    <div class="field">
+      <label>فريم الدخول (Entry - افتراضي M5)</label>
+      <select id="interval">
+        <option value="1min">1 دقيقة</option>
+        <option value="5min" selected>5 دقائق</option>
+        <option value="15min">15 دقيقة</option>
+      </select>
+    </div>
+    <div class="hint" style="margin-top:-6px; margin-bottom:14px;">
+      الاتجاه العام والدعم/المقاومة يُحسبان تلقائيًا على فريم M15، بينما فريم الدخول أعلاه يُستخدم لرصد التأكيد ونقطة الدخول.
+    </div>
+    <div class="checkbox-row">
+      <input type="checkbox" id="newsFilter" checked>
+      <label for="newsFilter">فلتر الأخبار الاقتصادية القوية</label>
+    </div>
+    <div class="field" id="finnhubField">
+      <label>Finnhub API Key (لفلتر الأخبار)</label>
+      <input type="password" id="finnhubKey" placeholder="مفتاح مجاني من finnhub.io">
+    </div>
+    <button id="startBtn">▶ ابدأ المراقبة</button>
+    <button id="stopBtn">■ إيقاف</button>
+    <div class="hint">
+      مصدر الأسعار (Deriv) لا يحتاج أي مفتاح أو تسجيل — يعمل تلقائيًا بالكامل.
+      تحتاج فقط مفتاح مجاني من <a href="https://finnhub.io/register" target="_blank" rel="noopener">finnhub.io</a> إذا أردت تفعيل فلتر الأخبار.
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="signal-card state-idle" id="signalCard">
+      <div class="signal-eyebrow" id="signalEyebrow">بانتظار البدء</div>
+      <div class="signal-title" id="signalTitle">—</div>
+      <div class="signal-meta" id="signalMeta">اضغط "ابدأ المراقبة" للبدء مباشرة</div>
+      <div class="signal-price" id="signalPrice"></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>المؤشرات</h2>
+    <div class="indicator-row"><span class="label">اتجاه M15</span><span class="value mono" id="indTrend">--</span></div>
+    <div class="indicator-row"><span class="label">دعم M15</span><span class="value mono" id="indSupport">--</span></div>
+    <div class="indicator-row"><span class="label">مقاومة M15</span><span class="value mono" id="indResistance">--</span></div>
+    <div class="indicator-row"><span class="label">ATR (M5)</span><span class="value mono" id="indAtr">--</span></div>
+  </section>
+
+  <section class="log-panel">
+    <div class="log-header">سجل الأحداث</div>
+    <div id="log"></div>
+  </section>
+</main>
+
+<script>
+// ================= الحالة =================
+let running = false;
+let pollTimer = null;
+let lastClosedTime = null;
+let newsCache = { data: null, fetchedAt: 0 };
+
+const CHECK_EVERY_MS = 30000;
+const SR_LOOKBACK = 20;
+const RSI_PERIOD = 14;
+const EMA_PERIOD = 200;      // لاتجاه H1 العام فقط
+const ATR_PERIOD = 14;
+const MIN_BODY_RATIO = 0.6;
+const ATR_MIN_RATIO = 0.5;
+const REJECTION_TOLERANCE = 0.002;   // نسبة اقتراب من مستوى H1 لاعتبارها "لمسة" له
+const NEWS_BUFFER_BEFORE = 30;
+const NEWS_BUFFER_AFTER = 30;
+const NEWS_CACHE_MS = 60 * 60 * 1000;
+
+// ================= مفتاح API مضمّن (اختياري - لفلتر الأخبار فقط) =================
+// مصدر الأسعار (Deriv) لا يحتاج أي مفتاح إطلاقًا.
+// حط مفتاح Finnhub هنا مرة وحدة لو تبي فلتر الأخبار يشتغل تلقائيًا بدون إدخال يدوي.
+const DEFAULT_FINNHUB_KEY = "";       // مثال: "efgh5678yourkey"
+
+// ================= عناصر DOM =================
+const el = id => document.getElementById(id);
+const startBtn = el('startBtn'), stopBtn = el('stopBtn');
+const statusPill = el('statusPill'), statusText = el('statusText'), headerDot = el('headerDot');
+const logBox = el('log');
+
+function getSelectedSymbol(){
+  const sel = el('symbol').value;
+  if(sel === '__custom__'){
+    return el('customSymbol').value.trim(); // بدون uppercase لأن رموز Deriv حساسة لحالة الأحرف (frx بحروف صغيرة)
+  }
+  return sel;
+}
+
+el('symbol').addEventListener('change', () => {
+  const isCustom = el('symbol').value === '__custom__';
+  el('customSymbolField').style.display = isCustom ? 'block' : 'none';
+});
+
+// ================= تعبئة تلقائية لمفتاح Finnhub المضمّن بالكود =================
+function autoFillKeys(){
+  if(DEFAULT_FINNHUB_KEY){
+    el('finnhubKey').value = DEFAULT_FINNHUB_KEY;
+    el('finnhubField').style.display = 'none';
+    log('✅ تم تحميل مفتاح Finnhub تلقائيًا - جاهز للبدء مباشرة', 'info');
+  }
+}
+autoFillKeys();
+
+function log(msg, cls='info'){
+  const now = new Date().toLocaleTimeString('ar-EG', {hour12:false});
+  const entry = document.createElement('div');
+  entry.className = 'entry';
+  entry.innerHTML = `<span class="ts">${now}</span><span class="msg ${cls}">${msg}</span>`;
+  logBox.prepend(entry);
+  while(logBox.children.length > 100) logBox.removeChild(logBox.lastChild);
+}
+
+function setStatus(state){
+  statusPill.className = 'status-pill';
+  if(state==='running'){ statusPill.classList.add('on'); statusText.textContent='يعمل'; headerDot.style.background='var(--buy)'; }
+  else if(state==='paused'){ statusPill.classList.add('paused'); statusText.textContent='متوقف مؤقتًا (خبر)'; headerDot.style.background='var(--wait)'; }
+  else { statusText.textContent='متوقف'; headerDot.style.background='var(--wait)'; }
+}
+
+// ================= خريطة رموز الأزواج لصيغة Deriv =================
+// Deriv يستخدم بادئة "frx" + رمز العملتين ملتصقين بدون شرطة مائلة
+const SYMBOL_MAP = {
+  'EUR/USD':'frxEURUSD', 'GBP/USD':'frxGBPUSD', 'USD/JPY':'frxUSDJPY',
+  'USD/CHF':'frxUSDCHF', 'USD/CAD':'frxUSDCAD', 'AUD/USD':'frxAUDUSD', 'NZD/USD':'frxNZDUSD',
+  'EUR/GBP':'frxEURGBP', 'EUR/JPY':'frxEURJPY', 'EUR/CHF':'frxEURCHF', 'EUR/AUD':'frxEURAUD',
+  'EUR/CAD':'frxEURCAD', 'EUR/NZD':'frxEURNZD', 'GBP/JPY':'frxGBPJPY', 'GBP/CHF':'frxGBPCHF',
+  'GBP/AUD':'frxGBPAUD', 'GBP/CAD':'frxGBPCAD', 'GBP/NZD':'frxGBPNZD', 'AUD/JPY':'frxAUDJPY',
+  'AUD/CHF':'frxAUDCHF', 'AUD/CAD':'frxAUDCAD', 'AUD/NZD':'frxAUDNZD', 'CAD/JPY':'frxCADJPY',
+  'CAD/CHF':'frxCADCHF', 'CHF/JPY':'frxCHFJPY', 'NZD/JPY':'frxNZDJPY', 'NZD/CHF':'frxNZDCHF',
+  'NZD/CAD':'frxNZDCAD',
+};
+
+function toDerivSymbol(symbol){
+  if(SYMBOL_MAP[symbol]) return SYMBOL_MAP[symbol];
+  // رمز مخصص: نسمح بإدخاله مباشرة بصيغة Deriv (مثل frxUSDTRY أو R_100 لمؤشر اصطناعي)
+  if(/^frx|^R_|^BOOM|^CRASH|^1HZ/i.test(symbol)) return symbol;
+  throw new Error(`الزوج "${symbol}" غير متاح على Deriv مباشرة. جرّب رمز Deriv مخصص (مثل frxUSDTRY) في حقل "أدخل رمزًا يدويًا"`);
+}
+
+const GRANULARITY_MAP = { '1min':60, '5min':300, '15min':900, '1h':3600 };
+const DERIV_WS_URL = 'wss://ws.derivws.com/websockets/v3?app_id=1089'; // app_id عام مجاني لبيانات السوق فقط
+
+// ================= جلب البيانات من Deriv (WebSocket) =================
+function derivRequest(request, timeoutMs=15000){
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const ws = new WebSocket(DERIV_WS_URL);
+    const timer = setTimeout(() => {
+      if(!settled){ settled = true; ws.close(); reject(new Error('انتهت مهلة الاتصال بـ Deriv')); }
+    }, timeoutMs);
+
+    ws.onopen = () => ws.send(JSON.stringify(request));
+    ws.onmessage = (msg) => {
+      const data = JSON.parse(msg.data);
+      if(data.error){
+        if(!settled){ settled = true; clearTimeout(timer); ws.close(); reject(new Error(data.error.message || 'خطأ من Deriv')); }
+        return;
+      }
+      if(!settled){ settled = true; clearTimeout(timer); resolve(data); ws.close(); }
+    };
+    ws.onerror = () => {
+      if(!settled){ settled = true; clearTimeout(timer); reject(new Error('تعذر الاتصال بـ Deriv WebSocket')); }
+    };
+  });
+}
+
+async function fetchCandles(symbol, interval){
+  const derivSymbol = toDerivSymbol(symbol);
+  const granularity = GRANULARITY_MAP[interval] || 300;
+  const data = await derivRequest({
+    ticks_history: derivSymbol,
+    adjust_start_time: 1,
+    count: 300,
+    end: 'latest',
+    start: 1,
+    style: 'candles',
+    granularity,
+  });
+  if(!data.candles || !data.candles.length){
+    throw new Error(`لا توجد بيانات من Deriv للرمز "${derivSymbol}"`);
+  }
+  return data.candles.map(c => ({
+    time: c.epoch,
+    open: parseFloat(c.open),
+    high: parseFloat(c.high),
+    low: parseFloat(c.low),
+    close: parseFloat(c.close),
+  }));
+}
+
+async function fetchNewsEvents(finnhubKey){
+  const now = Date.now();
+  if(newsCache.data && (now - newsCache.fetchedAt) < NEWS_CACHE_MS) return newsCache.data;
+  try{
+    const today = new Date();
+    const in3Days = new Date(today.getTime() + 3*24*60*60*1000);
+    const fmt = d => d.toISOString().slice(0,10);
+    const url = `https://finnhub.io/api/v1/calendar/economic?from=${fmt(today)}&to=${fmt(in3Days)}&token=${finnhubKey}`;
+    const res = await fetch(url);
+    if(!res.ok){
+      throw new Error(`Finnhub رفض الطلب (HTTP ${res.status}) - تحقق من صلاحية المفتاح أو أن التقويم الاقتصادي متاح ضمن خطتك المجانية`);
+    }
+    const json = await res.json();
+    const events = (json.economicCalendar || []).map(ev => ({
+      title: ev.event,
+      country: ev.country,          // Finnhub يرجع رمز دولة مثل US, EU, GB...
+      impact: ev.impact,            // low / medium / high
+      date: ev.time,                // "YYYY-MM-DD HH:MM:SS"
+    }));
+    newsCache = { data: events, fetchedAt: now };
+    return events;
+  }catch(e){
+    log('تعذر تحديث تقويم الأخبار من Finnhub: ' + e.message + ' - سيُتجاهل الفلتر مؤقتًا', 'error');
+    return newsCache.data || [];
+  }
+}
+
+// Finnhub يستخدم رموز دول (US, EU, GB, JP...) بدل رموز عملات (USD, EUR, GBP, JPY)
+const CURRENCY_TO_COUNTRY = {
+  USD:'US', EUR:'EU', GBP:'GB', JPY:'JP', CHF:'CH',
+  CAD:'CA', AUD:'AU', NZD:'NZ', TRY:'TR', ZAR:'ZA',
+  MXN:'MX', SEK:'SE', NOK:'NO', SGD:'SG', HKD:'HK',
+  PLN:'PL', DKK:'DK',
+};
+
+function extractCurrencies(symbol){
+  return symbol.replace('-', '/').split('/').map(s => s.trim().toUpperCase()).filter(Boolean);
+}
+
+async function isNearHighImpactNews(symbol, finnhubKey){
+  if(!finnhubKey) return { near:false };
+  const currencies = extractCurrencies(symbol);
+  const countries = currencies.map(c => CURRENCY_TO_COUNTRY[c]).filter(Boolean);
+  const events = await fetchNewsEvents(finnhubKey);
+  const now = Date.now();
+  for(const ev of events){
+    const impact = (ev.impact || '').toLowerCase();
+    if(impact !== 'high') continue;
+    if(!countries.includes(ev.country)) continue;
+    const evTime = new Date(ev.date.replace(' ', 'T')).getTime();
+    if(isNaN(evTime)) continue;
+    const diffMin = (evTime - now) / 60000;
+    if(diffMin >= -NEWS_BUFFER_AFTER && diffMin <= NEWS_BUFFER_BEFORE){
+      return { near:true, title: ev.title, country: ev.country };
+    }
+  }
+  return { near:false };
+}
+
+// ================= المؤشرات =================
+function ema(values, period){
+  const k = 2/(period+1);
+  const out = new Array(values.length).fill(null);
+  let prev = values[0];
+  out[0] = prev;
+  for(let i=1;i<values.length;i++){
+    prev = values[i]*k + prev*(1-k);
+    out[i] = prev;
+  }
+  return out;
+}
+
+function rsi(closes, period){
+  const out = new Array(closes.length).fill(null);
+  const gains = [0], losses = [0];
+  for(let i=1;i<closes.length;i++){
+    const diff = closes[i]-closes[i-1];
+    gains.push(Math.max(diff,0));
+    losses.push(Math.max(-diff,0));
+  }
+  for(let i=period;i<closes.length;i++){
+    const avgGain = gains.slice(i-period+1, i+1).reduce((a,b)=>a+b,0)/period;
+    const avgLoss = losses.slice(i-period+1, i+1).reduce((a,b)=>a+b,0)/period;
+    if(avgLoss===0){ out[i]=100; continue; }
+    const rs = avgGain/avgLoss;
+    out[i] = 100 - (100/(1+rs));
+  }
+  return out;
+}
+
+function atr(candles, period){
+  const trs = [candles[0].high - candles[0].low];
+  for(let i=1;i<candles.length;i++){
+    const c = candles[i], p = candles[i-1];
+    trs.push(Math.max(c.high-c.low, Math.abs(c.high-p.close), Math.abs(c.low-p.close)));
+  }
+  const out = new Array(candles.length).fill(null);
+  for(let i=period;i<candles.length;i++){
+    out[i] = trs.slice(i-period+1, i+1).reduce((a,b)=>a+b,0)/period;
+  }
+  return out;
+}
+
+// ================= أنماط الشموع =================
+const body = r => Math.abs(r.close-r.open);
+const range = r => r.high-r.low;
+const upperWick = r => r.high - Math.max(r.close,r.open);
+const lowerWick = r => Math.min(r.close,r.open) - r.low;
+const isBull = r => r.close > r.open;
+const isBear = r => r.close < r.open;
+const bodyStrength = r => range(r)===0 ? 0 : body(r)/range(r);
+const isStrongCandle = r => bodyStrength(r) >= MIN_BODY_RATIO;
+
+const bullishEngulfing = (p,c) => isBear(p) && isBull(c) && c.open<=p.close && c.close>=p.open;
+const bearishEngulfing = (p,c) => isBull(p) && isBear(c) && c.open>=p.close && c.close<=p.open;
+const hammer = (r, ratio=2.0) => { const b=body(r); if(b===0) return false; return lowerWick(r)>=ratio*b && upperWick(r)<=b*0.3; };
+const shootingStar = (r, ratio=2.0) => { const b=body(r); if(b===0) return false; return upperWick(r)>=ratio*b && lowerWick(r)<=b*0.3; };
+
+// شمعة "رفض" هابط عند الدعم: تخترق الدعم بفتيلها السفلي لكن تُغلق فوقه بقوة (رفض شراء واضح)
+function isBullishRejection(r, level){
+  const pierced = r.low <= level * (1 + REJECTION_TOLERANCE);
+  const closedAbove = r.close > level;
+  const b = body(r), w = lowerWick(r);
+  const strongWick = w >= 1.2 * Math.max(b, 1e-9);
+  return pierced && closedAbove && strongWick;
+}
+// شمعة "رفض" صاعد عند المقاومة: تخترقها بفتيلها العلوي لكن تُغلق تحتها بقوة (رفض بيع واضح)
+function isBearishRejection(r, level){
+  const pierced = r.high >= level * (1 - REJECTION_TOLERANCE);
+  const closedBelow = r.close < level;
+  const b = body(r), w = upperWick(r);
+  const strongWick = w >= 1.2 * Math.max(b, 1e-9);
+  return pierced && closedBelow && strongWick;
+}
+
+function getSupportResistance(candles, uptoIndex){
+  const start = Math.max(0, uptoIndex - SR_LOOKBACK);
+  const slice = candles.slice(start, uptoIndex);
+  return {
+    support: Math.min(...slice.map(c=>c.low)),
+    resistance: Math.max(...slice.map(c=>c.high)),
+  };
+}
+const nearLevel = (price, level, tol=0.0015) => Math.abs(price-level)/level <= tol;
+
+// ================= تقييم الإشارة (H1 اتجاه/دعم/مقاومة + M5 حركة شموع) =================
+function evaluateSignalMTF(h1Candles, m5Candles){
+  if(h1Candles.length < EMA_PERIOD+2) return null;
+  if(m5Candles.length < ATR_PERIOD+3) return null;
+
+  // ---- اتجاه H1 ----
+  const h1Closes = h1Candles.map(c=>c.close);
+  const emaH1Arr = ema(h1Closes, EMA_PERIOD);
+  const iH1 = h1Candles.length-2; // آخر شمعة H1 مغلقة
+  const h1Curr = h1Candles[iH1];
+  const emaH1Val = emaH1Arr[iH1];
+  if(emaH1Val==null) return null;
+  const trendUpH1 = h1Curr.close > emaH1Val;
+
+  // ---- دعم/مقاومة قوية من H1 ----
+  const {support, resistance} = getSupportResistance(h1Candles, iH1);
+
+  // ---- حركة السعر وأنماط الشموع على فريم الدخول M5 ----
+  const atrArr = atr(m5Candles, ATR_PERIOD);
+  const n = m5Candles.length;
+  const iCurr = n-2, iPrev = n-3; // iPrev = شمعة الرفض المحتملة، iCurr = شمعة التأكيد/الدخول
+  const entryCandle = m5Candles[iCurr], rejectionCandle = m5Candles[iPrev];
+  const atrVal = atrArr[iCurr];
+  if(atrVal==null) return null;
+
+  const atrSlice = atrArr.slice(Math.max(0,iCurr-30), iCurr).filter(v=>v!=null);
+  const avgAtr = atrSlice.reduce((a,b)=>a+b,0)/(atrSlice.length||1);
+  const strongVol = atrVal >= ATR_MIN_RATIO*avgAtr;
+  const strongCandle = isStrongCandle(entryCandle);
+
+  const common = {
+    atr: atrVal, support, resistance, trendUpH1, time: entryCandle.time,
+  };
+
+  // تأكيد صاعد: ابتلاع صاعد بعد لمسة الدعم (الرفض القوي مو إلزامي، بس لو وجد يُحسب ضمن التأكيد)
+  const bullishConfirmation =
+    bullishEngulfing(rejectionCandle, entryCandle) || hammer(rejectionCandle);
+
+  // تأكيد هابط: ابتلاع هابط بعد لمسة المقاومة (نفس المنطق)
+  const bearishConfirmation =
+    bearishEngulfing(rejectionCandle, entryCandle) || shootingStar(rejectionCandle);
+
+  // لمسة المستوى: كفاية إن سعر شمعة الرفض أو شمعة الدخول اقترب من الدعم/المقاومة (مو شرط رفض قوي بفتيل طويل)
+  const touchedSupport = rejectionCandle.low <= support*(1+REJECTION_TOLERANCE) || entryCandle.low <= support*(1+REJECTION_TOLERANCE);
+  const touchedResistance = rejectionCandle.high >= resistance*(1-REJECTION_TOLERANCE) || entryCandle.high >= resistance*(1-REJECTION_TOLERANCE);
+
+  // ---- شرط الشراء: اتجاه صاعد + لمسة دعم + تأكيد حركة سعر صاعدة ----
+  const bullishSetup = trendUpH1
+    && touchedSupport
+    && bullishConfirmation
+    && strongCandle && strongVol;
+
+  // ---- شرط البيع: اتجاه هابط + لمسة مقاومة + تأكيد حركة سعر هابطة ----
+  const bearishSetup = !trendUpH1
+    && touchedResistance
+    && bearishConfirmation
+    && strongCandle && strongVol;
+
+  if(bullishSetup){
+    return { ...common, signal:'CALL', price: entryCandle.close,
+      reason:'اتجاه صاعد + لمسة دعم + تأكيد حركة سعر صاعدة (ابتلاع/مطرقة)' };
+  }
+  if(bearishSetup){
+    return { ...common, signal:'PUT', price: entryCandle.close,
+      reason:'اتجاه هابط + لمسة مقاومة + تأكيد حركة سعر هابطة (ابتلاع/نجمة هابطة)' };
+  }
+  return { ...common, signal:null, price: entryCandle.close };
+}
+
+// ================= شريط النبض =================
+function drawPulse(candles){
+  const closes = candles.slice(-60).map(c=>c.close);
+  if(closes.length<2) return;
+  const min = Math.min(...closes), max = Math.max(...closes);
+  const range_ = (max-min)||1;
+  const w=1000, h=64, pad=6;
+  const points = closes.map((v,i)=>{
+    const x = (i/(closes.length-1))*w;
+    const y = h - pad - ((v-min)/range_)*(h-2*pad);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+  const line = el('pulseLine');
+  line.setAttribute('points', points);
+  const lastCandle = candles[candles.length-1];
+  const trendColor = lastCandle.close >= (candles[candles.length-2]?.close ?? lastCandle.close) ? '#2FBF8F' : '#E4573D';
+  line.setAttribute('stroke', trendColor);
+
+  const dot = el('pulseGlowDot');
+  const lastX = w, lastY = h - pad - ((closes[closes.length-1]-min)/range_)*(h-2*pad);
+  dot.setAttribute('cx', lastX); dot.setAttribute('cy', lastY);
+  dot.setAttribute('fill', trendColor);
+  dot.style.opacity = 1;
+
+  el('pulseLastPrice').textContent = lastCandle.close.toFixed(5);
+}
+
+// ================= تحديث الواجهة =================
+function updateIndicatorsUI(result){
+  if(!result) return;
+  if(result.atr!=null) el('indAtr').textContent = result.atr.toFixed(5);
+  if(result.support!=null) el('indSupport').textContent = result.support.toFixed(5);
+  if(result.resistance!=null) el('indResistance').textContent = result.resistance.toFixed(5);
+
+  const trendEl = el('indTrend');
+  if(result.trendUpH1!=null){
+    trendEl.textContent = result.trendUpH1 ? 'صاعد ▲' : 'هابط ▼';
+    trendEl.className = 'value mono ' + (result.trendUpH1 ? 'up':'down');
+  }
+}
+
+function setSignalCard(state, {eyebrow, title, meta, price}={}){
+  const card = el('signalCard');
+  card.className = 'signal-card state-' + state;
+  el('signalEyebrow').textContent = eyebrow ?? '';
+  el('signalTitle').textContent = title ?? '—';
+  el('signalMeta').textContent = meta ?? '';
+  el('signalPrice').textContent = price ?? '';
+}
+
+// ================= الحلقة الرئيسية =================
+async function pollOnce(){
+  const symbol = getSelectedSymbol();
+  const interval = el('interval').value;
+  const newsFilterOn = el('newsFilter').checked;
+
+  if(!symbol){ log('اختر زوجًا أو أدخل رمزًا مخصصًا', 'error'); stopMonitoring(); return; }
+
+  try{
+    const [h1Candles, m5Candles] = await Promise.all([
+      fetchCandles(symbol, '15min'),
+      fetchCandles(symbol, interval),
+    ]);
+    drawPulse(m5Candles);
+
+    const currentClosedTime = m5Candles[m5Candles.length-2]?.time;
+    if(currentClosedTime === lastClosedTime){
+      return; // نفس الشمعة، لا داعي لإعادة التقييم
+    }
+    lastClosedTime = currentClosedTime;
+    const closedTimeLabel = new Date(currentClosedTime*1000).toLocaleTimeString('ar-EG', {hour12:false});
+
+    if(newsFilterOn){
+      const finnhubKey = el('finnhubKey').value.trim();
+      if(!finnhubKey){
+        log('فلتر الأخبار مفعّل لكن لم يُدخل مفتاح Finnhub - سيُتجاهل الفلتر', 'error');
+      } else {
+        const newsCheck = await isNearHighImpactNews(symbol, finnhubKey);
+        if(newsCheck.near){
+          setStatus('paused');
+          setSignalCard('news', {
+            eyebrow: 'إيقاف مؤقت', title: '⏸ خبر قوي',
+            meta: `${newsCheck.title} (${newsCheck.country})`,
+          });
+          log(`⏸ إيقاف مؤقت - خبر قوي: ${newsCheck.title} (${newsCheck.country})`, 'news');
+          return;
+        }
+      }
+    }
+    setStatus('running');
+
+    const result = evaluateSignalMTF(h1Candles, m5Candles);
+    updateIndicatorsUI(result);
+
+    if(result && result.signal){
+      const cls = result.signal==='CALL' ? 'call':'put';
+      setSignalCard(cls, {
+        eyebrow: `إشارة جديدة · ${symbol}`,
+        title: result.signal,
+        meta: result.reason,
+        price: result.price.toFixed(5),
+      });
+      log(`🔔 إشارة ${result.signal} على ${symbol} - السعر ${result.price.toFixed(5)} - ${result.reason}`, cls);
+    } else if(result) {
+      setSignalCard('idle', { eyebrow:`آخر فحص · ${symbol}`, title:'لا إشارة', meta:'شروط M15+M5 غير مكتملة على الشمعة المغلقة' });
+      log(`لا توجد إشارة على الشمعة المغلقة (${closedTimeLabel})`, 'info');
+    } else {
+      log('بيانات غير كافية لتقييم الإشارة بعد (يحتاج تاريخ أطول)', 'info');
+    }
+  }catch(e){
+    log('⚠️ ' + e.message, 'error');
+  }
+}
+
+function startMonitoring(){
+  const symbol = getSelectedSymbol();
+  if(!symbol){ log('اختر زوجًا أو أدخل رمزًا مخصصًا', 'error'); return; }
+  running = true;
+  lastClosedTime = null;
+  startBtn.style.display='none'; stopBtn.style.display='block';
+  el('pulseSymbolLabel').textContent = symbol + ' · ' + el('interval').selectedOptions[0].textContent;
+  setStatus('running');
+  log('🔄 بدء المراقبة على ' + symbol + ' عبر Deriv', 'info');
+  pollOnce();
+  pollTimer = setInterval(pollOnce, CHECK_EVERY_MS);
+}
+
+function stopMonitoring(){
+  running = false;
+  clearInterval(pollTimer);
+  startBtn.style.display='block'; stopBtn.style.display='none';
+  setStatus('idle');
+  setSignalCard('idle', {eyebrow:'متوقف', title:'—', meta:'اضغط "ابدأ المراقبة" لإعادة التشغيل'});
+  log('■ تم إيقاف المراقبة', 'info');
+}
+
+startBtn.addEventListener('click', startMonitoring);
+stopBtn.addEventListener('click', stopMonitoring);
+</script>
+</body>
+</html>
